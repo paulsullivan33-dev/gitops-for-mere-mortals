@@ -1,9 +1,10 @@
 # GitOps Patterns Without Kubernetes
 
 Concrete, copyable GitOps patterns for servers, homelabs, and personal
-machines — no cluster required. Each pattern follows the same shape:
-the idea, the repo layout, the loop that applies it, and the honest
-limits. For the concepts behind them, see
+machines — no cluster required. Nine patterns, from one-server scripts
+to fleet tooling. Each pattern follows the same shape: the idea, the
+repo layout, the loop that applies it, and the honest limits. For the
+concepts behind them, see
 [GitOps Without Kubernetes](gitops-without-kubernetes.md).
 
 ## 1. Ansible-pull fleet (the workhorse)
@@ -188,6 +189,109 @@ differently and roll back differently.
 Honest limits: Terraform state files are sensitive and finicky —
 remote state with locking (S3, Terraform Cloud, etc.), never local
 state in a shared setup.
+
+## 8. PowerShell scheduled sync (Windows)
+
+Windows machines get the same loop with native tooling: a repo holds
+an idempotent `Apply.ps1`; a Scheduled Task pulls and runs it.
+
+```powershell
+# Apply.ps1 — idempotent: safe to re-run
+$ErrorActionPreference = 'Stop'
+Set-Location $PSScriptRoot
+git pull --quiet --ff-only
+
+# ensure a Windows feature is present
+if (-not (Get-WindowsFeature Web-Server).Installed) {
+    Install-WindowsFeature Web-Server
+}
+
+# ensure config file matches the repo
+$desired = Get-Content .\nginx\nginx.conf -Raw
+$current = Get-Content C:\nginx\conf\nginx.conf -Raw
+if ($desired -ne $current) {
+    Copy-Item .\nginx\nginx.conf C:\nginx\conf\nginx.conf -Force
+    Restart-Service nginx
+}
+```
+
+Register the loop as a scheduled task:
+
+```powershell
+$action = New-ScheduledTaskAction -Execute 'powershell.exe' `
+  -Argument '-ExecutionPolicy Bypass -File C:\desired-state\Apply.ps1'
+$trigger = New-ScheduledTaskTrigger -Once -At (Get-Date) `
+  -RepetitionInterval (New-TimeSpan -Minutes 15)
+Register-ScheduledTask -TaskName 'DesiredStateSync' `
+  -Action $action -Trigger $trigger -RunLevel Highest
+```
+
+**Check:** `Get-ScheduledTaskInfo DesiredStateSync` shows the last
+run; the Task Scheduler history shows each execution.
+
+Honest limits: hand-rolled like pattern 2 — no built-in diff view or
+drift dashboard. When the scripts outgrow you, **PowerShell DSC**
+(Desired State Configuration, v3 is cross-platform) is the native
+declarative step up: you write *what*, DSC handles *how*.
+
+## 9. Python converge script (cross-platform agent)
+
+When the logic outgrows shell — conditions, data files, error
+handling — a small Python agent is the mere-mortals answer. One
+language runs the loop on Linux (systemd timer) and Windows
+(Scheduled Task).
+
+`desired.yaml` in the repo — the declarative part:
+
+```yaml
+packages:
+  - nginx
+  - fail2ban
+files:
+  - src: nginx/nginx.conf
+    dest: /etc/nginx/nginx.conf
+    reload: nginx
+```
+
+`converge.py` — the agent part:
+
+```python
+import subprocess, sys
+import yaml  # pip install pyyaml
+
+state = yaml.safe_load(open("desired.yaml"))
+changed = False
+
+for pkg in state.get("packages", []):
+    r = subprocess.run(["dpkg", "-s", pkg], capture_output=True)
+    if r.returncode != 0:
+        print(f"installing {pkg}")
+        subprocess.run(["apt-get", "install", "-y", pkg], check=True)
+        changed = True
+
+for f in state.get("files", []):
+    want = open(f["src"]).read()
+    try:
+        have = open(f["dest"]).read()
+    except FileNotFoundError:
+        have = None
+    if want != have:
+        print(f"updating {f['dest']}")
+        open(f["dest"], "w").write(want)
+        subprocess.run(["systemctl", "reload", f["reload"]], check=True)
+        changed = True
+
+print("changed" if changed else "already converged")
+sys.exit(0)
+```
+
+The timer does `git pull` then runs the script. Because the desired
+state is data (YAML) and the agent is code, you can unit-test the
+convergence logic — something shell scripts rarely get.
+
+Honest limits: you're now maintaining software, with its bugs and
+dependencies. Keep the agent small and boring; the moment it grows a
+plugin system, you've reinvented Ansible badly — just use Ansible.
 
 ## Is your pattern GitOps? (the checklist)
 
