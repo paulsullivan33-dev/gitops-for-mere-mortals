@@ -61,9 +61,4 @@ Pick one thing that's currently snowflake configuration — the nginx
 config on one server, your dotfiles — put it in git, and automate its
 application. One loop, working, teaches more than a grand design.
 
-For concrete setups to copy, see
-[Non-Kubernetes Patterns](non-kubernetes-patterns.md): ansible-pull
-fleets, cron apply scripts, etckeeper, chezmoi dotfiles,
-compose-from-git, drift reporting, and the Terraform split.
-
 Next: [Tools Overview](tools-overview.md).

@@ -26,10 +26,6 @@ and plain scripts too. These guides keep that broader view.
 
 4. [GitOps Without Kubernetes](gitops-without-kubernetes.md) — the
    broader framing: servers, configs, and scripts.
-5. [Non-Kubernetes Patterns](non-kubernetes-patterns.md) — seven
-   concrete patterns: ansible-pull, cron scripts, etckeeper,
-   dotfiles, compose-from-git, drift reporting, and the
-   Terraform split.
 5. [Tools Overview](tools-overview.md) — what the tools do, honestly,
    without hype.
 6. [Secrets and Safety](secrets-and-safety.md) — what doesn't go in
